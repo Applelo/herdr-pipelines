@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import ./test/register.mjs --test test/*.test.mjs",
+    "check": "herdr-app check mods/pipelines"
+  }
+}

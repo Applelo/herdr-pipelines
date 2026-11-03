@@ -1,0 +1,6 @@
+{
+  "global": {
+    "cmd-shift-i": "pipelines.open",
+    "cmd-shift-r": "pipelines.refresh"
+  }
+}

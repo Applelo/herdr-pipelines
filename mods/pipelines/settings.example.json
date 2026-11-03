@@ -1,0 +1,7 @@
+{
+  "tokens": {
+    "gitlab.example.com": "glpat-…",
+    "bitbucket.org": { "email": "you@example.com", "token": "<Atlassian API token>" },
+    "github.com": "github_pat_…"
+  }
+}
