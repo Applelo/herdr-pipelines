@@ -8,7 +8,7 @@ A CI status button for the [Herdr](https://herdr.dev) app's status bar. It turns
 > **This mod is entirely vibecoded.** An AI agent (Claude Code) wrote all of the code, the tests, the [RECIPE.md](RECIPE.md) and this README. I prompted it, tried the results in my own Herdr and asked for changes, but I haven't reviewed the code line by line. Read [What it runs and stores](#what-it-runs-and-stores) before giving it your tokens, and expect rough edges.
 
 - **The button** shows "Pipelines", or a blue spinner and "2 running", or "1 failed" in red. It only counts the repos of the shown space.
-- **One row per environment**, read from the CI itself: GitLab environments and their latest deployments, the `deployment:` steps in `bitbucket-pipelines.yml`, or GitHub deployments. A repo without any shows `master` and `develop` (or GitHub's default branch).
+- **One row per environment**, read from the CI itself: GitLab environments and their latest deployments, the `deployment:` steps in `bitbucket-pipelines.yml`, or GitHub deployments. Environments deploying the same branch share one row, and a repo without any shows its default branch.
 - **Status at a glance**: a colored dot, or a spinning ring while the pipeline runs, the status, and how long ago it changed. The host icon opens the pipeline, the globe opens the environment's website, and the branch name opens the branch.
 - **Space / All** switches the popup between the shown space's repos and every repo.
 - **Toasts** when a pipeline you saw running ends: "production pipeline failed" or "staging pipeline passed".

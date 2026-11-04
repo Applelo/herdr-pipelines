@@ -45,12 +45,11 @@ const RANK = { production: 0, staging: 1, testing: 2, development: 3, other: 4 }
 const MAX_ENVS = 6;
 export const byTier = (a, b) => (RANK[a.tier] ?? 5) - (RANK[b.tier] ?? 5) || a.env.localeCompare(b.env);
 
-// One row per deploy environment the CI declares (without any, master and develop), then the
-// build of each branch the repo's spaces are on, unless an environment row already shows it.
+// One row per branch: the highest-tier environment deploying it (envs come sorted by tier), then the
+// build of each branch the repo's spaces are on that no environment row shows.
 export function buildRows(envs, branches = []) {
-  const rows = envs.length
-    ? envs.map((e) => ({ role: e.env, ref: e.ref, env: e.env, url: e.url ?? null }))
-    : [{ role: "prod", ref: "master", env: null, url: null }, { role: "preprod", ref: "develop", env: null, url: null }];
+  const rows = [];
+  for (const e of envs) if (!rows.some((r) => r.ref === e.ref)) rows.push({ role: e.env, ref: e.ref, env: e.env, url: e.url ?? null });
   for (const ref of branches) if (!rows.some((r) => r.ref === ref)) rows.push({ role: "branch", ref, env: null, url: null, branch: true });
   return rows;
 }
@@ -70,6 +69,9 @@ export const gitlab = {
       if (e.status === 403 && permission && !/rate limit/.test(e.message)) e.message = `The token can't read ${permission.toLowerCase()}s here: give it ${permission}: Read on this project`;
       throw e;
     }
+  },
+  async defaultBranch(p, token) {
+    return (await this.api(p, "", token)).default_branch;
   },
   async latest(p, ref, token) {
     const x = (await this.api(p, `/pipelines?ref=${encodeURIComponent(ref)}&per_page=1`, token, "Pipeline"))[0];
@@ -157,6 +159,10 @@ export const bitbucket = {
     const x = page.values?.[0];
     return x ? { id: x.uuid, status: bitbucketState(x.state), web_url: `https://bitbucket.org/${p.path}/pipelines/results/${x.build_number}`, updated_at: x.completed_on || x.created_on } : null;
   },
+  async defaultBranch(p, token) {
+    const repo = p.path.split("/").map(encodeURIComponent).join("/");
+    return (await call(`https://api.bitbucket.org/2.0/repositories/${repo}`, this.headers(token), "api.bitbucket.org")).mainbranch?.name;
+  },
   async envs(p) {
     const yaml = p.root ? await readTextFile(`${p.root}/bitbucket-pipelines.yml`, { on: p.machine }).catch(() => null) : null;
     return yaml ? bitbucketDeployments(yaml) : [];
@@ -206,13 +212,15 @@ export const github = {
       throw e;
     }
   },
+  async defaultBranch(p, token) {
+    return (await this.api(p, "", token)).default_branch;
+  },
   async latest(p, ref, token) {
     const page = await this.api(p, `/actions/runs?branch=${encodeURIComponent(ref)}&per_page=20`, token, "Actions");
     return githubLatest(page.workflow_runs ?? []);
   },
   // The latest deployment of each environment, newest first from the API. Transient ones (previews)
-  // and deployments of a bare commit name no branch, so they're left out. A repo without any shows
-  // its default branch, rarely the master/develop pair the other hosts fall back to.
+  // and deployments of a bare commit name no branch, so they're left out.
   async envs(p, token) {
     const list = await this.api(p, "/deployments?per_page=100", token, "Deployments");
     const latest = new Map();
@@ -221,10 +229,6 @@ export const github = {
       latest.set(d.environment, { env: d.environment, tier: d.production_environment ? "production" : envTier(d.environment), ref: d.ref, id: d.id });
     }
     const envs = [...latest.values()].sort(byTier).slice(0, MAX_ENVS);
-    if (!envs.length) {
-      const repo = await this.api(p, "", token);
-      return repo.default_branch ? [{ env: "default", tier: "other", ref: repo.default_branch, url: null }] : [];
-    }
     return Promise.all(envs.map(async ({ id, ...e }) => {
       const s = (await this.api(p, `/deployments/${id}/statuses?per_page=1`, token).catch(() => []))[0];
       return { ...e, url: s?.environment_url || null };

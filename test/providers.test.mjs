@@ -14,8 +14,12 @@ test("parseRemote reads GitHub remotes and skips Codeberg", () => {
   assert.equal(parseRemote("https://codeberg.org/a/b"), null);
 });
 
-test("buildRows falls back to master and develop, then adds branches not shown yet", () => {
-  assert.deepEqual(buildRows([], ["develop", "feat/x"]).map((r) => [r.role, r.ref]), [["prod", "master"], ["preprod", "develop"], ["branch", "feat/x"]]);
+test("buildRows hard-codes no branch, and adds the spaces' branches not shown yet", () => {
+  assert.deepEqual(buildRows([], ["develop", "feat/x"]).map((r) => [r.role, r.ref]), [["branch", "develop"], ["branch", "feat/x"]]);
+  const fallback = [{ env: "default", ref: "develop" }];
+  assert.deepEqual(buildRows(fallback, ["develop", "feat/x"]).map((r) => [r.role, r.ref]), [["default", "develop"], ["branch", "feat/x"]]);
+  const shared = [{ env: "production", ref: "master" }, { env: "staging", ref: "develop" }, { env: "dev", ref: "develop" }];
+  assert.deepEqual(buildRows(shared, ["develop"]).map((r) => [r.role, r.ref]), [["production", "master"], ["staging", "develop"]]);
   const envs = [{ env: "production", ref: "main", url: "https://x.io" }];
   assert.deepEqual(buildRows(envs, ["main"]).map((r) => [r.role, r.ref, r.url]), [["production", "main", "https://x.io"]]);
 });
@@ -93,12 +97,16 @@ test("github envs keep each environment's latest branch deployment", async (t) =
   ]);
 });
 
-test("github envs fall back to the default branch without deployments", async (t) => {
+test("each host reads its default branch", async (t) => {
   t.mock.method(globalThis, "fetch", async (url) => {
-    const body = url.endsWith("/deployments?per_page=100") ? [] : url.endsWith("/repos/o/r") ? { default_branch: "main" } : null;
+    const body = url === "https://gitlab.example.com/api/v4/projects/g%2Fr" ? { default_branch: "develop" }
+      : url === "https://api.bitbucket.org/2.0/repositories/ws/r" ? { mainbranch: { name: "master" } }
+      : url === "https://api.github.com/repos/o/r" ? { default_branch: "main" } : null;
     return { status: 200, ok: true, json: async () => body };
   });
-  assert.deepEqual(await github.envs({ host: "github.com", path: "o/r" }, "tok"), [{ env: "default", tier: "other", ref: "main", url: null }]);
+  assert.equal(await gitlab.defaultBranch({ host: "gitlab.example.com", path: "g/r" }, "tok"), "develop");
+  assert.equal(await bitbucket.defaultBranch({ host: "bitbucket.org", path: "ws/r" }, "tok"), "master");
+  assert.equal(await github.defaultBranch({ host: "github.com", path: "o/r" }, "tok"), "main");
 });
 
 test("a rate-limited GitLab 403 isn't reported as a missing permission", async (t) => {

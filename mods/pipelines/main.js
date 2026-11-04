@@ -155,14 +155,17 @@ export default class Pipelines extends View {
       const cwd = spaceFolder(space), on = space.machine;
       const r = cwd ? await exec("git", ["remote", "get-url", "origin"], { cwd, on }).catch(() => null) : null;
       const remote = r?.code === 0 ? parseRemote(r.stdout) : null;
-      const top = remote ? await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null) : null;
-      return { space, remote, root: top?.code === 0 ? top.stdout.trim() : null };
+      if (!remote) return { space };
+      const git = (args) => exec("git", args, { cwd, on }).then((x) => x.code === 0 ? x.stdout.trim() : null, () => null);
+      // `origin/HEAD` names the default branch locally, with no token permission (GitLab's needs Project: Read).
+      const [root, head] = await Promise.all([git(["rev-parse", "--show-toplevel"]), git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])]);
+      return { space, remote, root, defaultBranch: head?.replace(/^origin\//, "") || null };
     }));
     const byId = new Map();
-    for (const { space, remote, root } of found) {
+    for (const { space, remote, root, defaultBranch } of found) {
       if (!remote) continue;
       const id = `${remote.host}/${remote.path}`;
-      if (!byId.has(id)) byId.set(id, { id, ...remote, machine: space.machine, root, spaces: [], branches: [] });
+      if (!byId.has(id)) byId.set(id, { id, ...remote, machine: space.machine, root, defaultBranch, spaces: [], branches: [] });
       const project = byId.get(id);
       project.spaces.push(space.id);
       if (space.branch && !project.branches.includes(space.branch)) project.branches.push(space.branch);
@@ -184,6 +187,11 @@ export default class Pipelines extends View {
     if (!envs) {
       try {
         envs = await provider.envs(project, token);
+        // No environment declared: the repo's default branch, from the clone, else from the host.
+        if (!envs.length) {
+          const ref = project.defaultBranch || await provider.defaultBranch(project, token).catch((e) => { if (e.offline) throw e; return null; });
+          if (ref) envs = [{ env: "default", tier: "other", ref, url: null }];
+        }
         envCache.next[project.id] = { at: Date.now(), envs };
       } catch (e) {
         if (e.offline) return this.offline(project, prev, e);
@@ -193,9 +201,7 @@ export default class Pipelines extends View {
     }
     project.rows = buildRows(envs, project.branches);
     try {
-      const byRef = new Map();
-      for (const r of project.rows) if (!byRef.has(r.ref)) byRef.set(r.ref, provider.latest(project, r.ref, token));
-      await Promise.all(project.rows.map(async (r) => { r.p = await byRef.get(r.ref); }));
+      await Promise.all(project.rows.map(async (r) => { r.p = await provider.latest(project, r.ref, token); }));
       project.error = null;
     } catch (e) {
       if (e.offline) return this.offline(project, prev, e);
@@ -211,14 +217,11 @@ export default class Pipelines extends View {
     project.error = project.rows.length ? null : e.message;
   }
 
-  // Rows sharing a pipeline (staging and dev both on develop) announce it once, under the first one.
   announce(project, before) {
-    const told = new Set();
     for (const row of project.rows) {
       const was = before?.rows?.find((r) => r.role === row.role && r.ref === row.ref)?.p, now = row.p;
-      if (!was || !now || was.id !== now.id || told.has(now.id)) continue;
+      if (!was || !now || was.id !== now.id) continue;
       if (!running(was) || running(now) || !["failed", "success"].includes(now.status)) continue;
-      told.add(now.id);
       notify({
         title: `${row.role} pipeline ${now.status === "failed" ? "failed" : "passed"}`,
         body: `${project.path} · ${row.ref}`,
