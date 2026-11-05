@@ -17,7 +17,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
     - Refresh shows a 14px circular arrow, or a 13px ring spinner while any copy is refreshing. Both header buttons are `muted`, with a `hover` background and `foreground` icon on hover.
   - **List**: one card per repo whose host has a token, 8px apart. The scroll area runs from the header line to the popup's bottom edge, with 12px top and bottom padding, 8px left and 14px right (the scrollbar's own gutter). A 12px fade lies over its top and bottom edges, from `background` to transparent, leaving the scrollbar's 14px uncovered. A card scrolled under an edge dissolves into it instead of meeting a border; at rest the fades only cover the padding. The Tokens view scrolls the same way.
   - **Card**: `surface`, 1px border (`accent` for the shown space's repo, which comes first; `border` otherwise; others follow space order), 9px radius, 4px padding.
-    - **Head**, 30px: a 12px GitLab tanuki, Bitbucket bucket or GitHub octocat in `dim`, the repo name (semibold, truncated), and the group path on the right (`choosik/js`, 11px, `dim`, at most 140px).
+    - **Head**, 30px: a 12px GitLab tanuki, Bitbucket bucket or GitHub octocat in `dim`, the repo name (semibold, truncated), the group path on the right (`choosik/js`, 11px, `dim`, at most 140px), then a 22×22 bell button: `bell-off.svg` in `dim` while the repo's toasts are off (the default), `bell.svg` in `foreground` once on; `raised` background and `foreground` on hover, with a tooltip. Head padding is 10px left, 4px right, so the bell lines up with the rows' icon slots.
     - **Rows**, 30px each, 10px left and 4px right padding, 6px gaps, 7px radius, `hover` background:
       1. a 14px slot with an 8px status dot, or a 12px spinning ring while the pipeline runs;
       2. the environment's name as the CI spells it ("production", "staging", "recette"), 72px, 11px, `muted`, truncated; "branch" in `dim` on a build row;
@@ -58,7 +58,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
 - **Website**: the globe opens a GitLab environment's `external_url` (its `environment:url`), or the `environment_url` of a GitHub deployment's latest status. Bitbucket environments have no URL, so Bitbucket rows have no globe.
 - **Refreshing**: when the spaces, their `folder` or branches change, every 60s, and every 15s while a shown pipeline is running or pending (on GitHub, while any workflow of the commit runs, even once another has failed). CI environments are looked up again at most every 5 minutes per repo. The refresh button and `cmd-shift-r` refresh now and look the environments up again, even while another copy is refreshing (it runs once more when done). Only one copy refreshes at a time, and the others show its result at once. A terminal that moves to another repo shows at the next 60s refresh: a `cd` alone triggers none.
 - **Clicks** in the popup: the host icon opens the pipeline, the globe the website, the branch name that branch on GitLab (`/-/tree/<branch>`), Bitbucket (`/branch/<branch>`) or GitHub (`/tree/<branch>`), and the card head the repo's pipelines page. The rest of a row only highlights.
-- **Notifications**: when an environment's pipeline seen running or pending ends, a toast says "production pipeline failed" (`error`, stays until dismissed) or "staging pipeline passed" (`success`, 6s), with `group/repo · branch` as its body. On GitHub it waits for every workflow of the commit to end. Nothing is announced on first load.
+- **Notifications**: off for every repo until its bell is clicked; the bell turns them on or off for that repo only, and the choice is kept across restarts. For a repo with them on, when a pipeline seen running or pending ends, a toast says "production pipeline failed" (`error`, stays until dismissed) or "staging pipeline passed" (`success`, 6s), with `group/repo · branch` as its body. On GitHub it waits for every workflow of the commit to end. Nothing is announced on first load.
 - Nothing animates except the ring spinners (native `.spin(900)`).
 
 ## Built from
@@ -76,6 +76,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
 - **Shared state** (`shared` / `setShared`):
   - `pipelines.data`: the last result. Token values never go in it, only `saved` (hosts with a token in `settings.json`) and `env` (`{ <host>: "GITLAB_TOKEN" | "BITBUCKET_TOKEN" | "GITHUB_TOKEN" | "gh auth" }`: the hosts an environment token goes to). It is `{ key, at, refreshing, forced, saved, env, envCache: { <project id>: { at, envs } }, projects: [{ id, kind, host, path, web, spaces: [space ids], machine, root, error, rows: [{ role, ref, env, url, p: { id, status, web_url, updated_at } }] }], missing: [{ host, kind }], configError }`;
   - `pipelines.scope`: `"space"` or `"all"`;
+  - `pipelines.notify`: the project ids (`<host>/<path>`) whose toasts are on, `[]` or missing by default;
   - `pipelines.popup`: the open popup's overlay id. The popup copy sets it in `init` and clears it in `close()` (also called on quit). The button only reads it to toggle;
   - `pipelines.button`: the newest button copy's id (see Watch out);
   - `pipelines.anchor`: the button's window bounds (`{ x, y, width, height }`).
@@ -84,6 +85,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
   - `refresh.svg`: a circular arrow, stroke 2;
   - `close.svg`: an ✕, stroke 2;
   - `key.svg`: a key (a ring and a notched shaft), stroke 2;
+  - `bell.svg`: a bell with its clapper, stroke 2; `bell-off.svg`: the same bell crossed by a diagonal, stroke 2;
   - `pipeline.svg`: three r 2.5 rings joined by short lines, stroke 2;
   - `globe.svg`: a circle, a meridian and the equator, stroke 2;
   - `gitlab.svg`: a filled tanuki;

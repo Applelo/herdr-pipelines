@@ -6,7 +6,7 @@ import { spaces, panes, exec, readTextFile, writeTextFile, appHome, theme, setti
 import { BUSY, PROVIDERS, parseRemote, buildRows } from "./providers.js";
 
 const MOD = "mods/pipelines";
-const DATA = "pipelines.data", SCOPE = "pipelines.scope", POPUP = "pipelines.popup", ANCHOR = "pipelines.anchor", OWNER = "pipelines.button";
+const DATA = "pipelines.data", SCOPE = "pipelines.scope", NOTIFY = "pipelines.notify", POPUP = "pipelines.popup", ANCHOR = "pipelines.anchor", OWNER = "pipelines.button";
 const CONFIG = () => `${appHome()}/${MOD}/settings.json`;
 const IDLE_MS = 60000, BUSY_MS = 15000, ENV_MS = 300000, LEASE_MS = 60000;
 // The popup can't be resized once open, so one height fits every view and filter; the content scrolls.
@@ -50,6 +50,8 @@ const running = (pipeline) => Boolean(pipeline) && (BUSY.has(pipeline.status) ||
 
 const data = () => shared(DATA) ?? { projects: [], missing: [], at: 0 };
 const scope = () => shared(SCOPE) === "space" ? "space" : "all";
+// Project ids whose pipeline toasts are on; every project starts off.
+const notified = () => shared(NOTIFY) ?? [];
 
 function visible(only = scope()) {
   const active = spaces().find((s) => s.active)?.id;
@@ -218,6 +220,7 @@ export default class Pipelines extends View {
   }
 
   announce(project, before) {
+    if (!notified().includes(project.id)) return;
     for (const row of project.rows) {
       const was = before?.rows?.find((r) => r.role === row.role && r.ref === row.ref)?.p, now = row.p;
       if (!was || !now || was.id !== now.id) continue;
@@ -273,15 +276,25 @@ export default class Pipelines extends View {
     const error = project.error;
     return v_flex().id(`card-${project.id}`).flex_none().p(4).gap(1).rounded(9).border_1()
       .border_color(project.active ? t.accent : t.border).bg(t.surface)
-      .child(h_flex().id(`head-${project.id}`).h(30).px(10).gap(8).items_center().cursor_pointer().rounded(7)
+      .child(h_flex().id(`head-${project.id}`).h(30).pl(10).pr(4).gap(8).items_center().cursor_pointer().rounded(7)
         .hover((s) => s.bg(t.hover)).on_click(() => openUrl(project.web))
         .child(svg(`${MOD}/${PROVIDERS[project.kind].icon}`).size(12).flex_none().text_color(t.dim))
         .child(div().flex_1().min_w(0).truncate().font_semibold().child(project.path.split("/").pop()))
-        .child(div().flex_none().max_w(140).truncate().text_size(11).text_color(t.dim).child(project.path.split("/").slice(0, -1).join("/"))))
+        .child(div().flex_none().max_w(140).truncate().text_size(11).text_color(t.dim).child(project.path.split("/").slice(0, -1).join("/")))
+        .child(this.notifyButton(project, t)))
       .when(project.offline && !error, (e) => e.child(div().px(10).py(4).text_size(11).text_color(t.dim).child(`Can't reach ${project.host}, showing the last results`)))
       .when(Boolean(project.note) && !error, (e) => e.child(div().px(10).py(4).text_size(11).text_color(t.ansi3).child(project.note)))
       .when(Boolean(error), (e) => e.child(div().px(10).py(4).text_size(11).text_color(t.ansi1).child(error)))
       .when(!error, (e) => e.children(project.rows.map((r) => this.row(project, r, t, mono))));
+  }
+
+  notifyButton(project, t) {
+    const on = notified().includes(project.id);
+    return div().id(`notify-${project.id}`).w(22).h(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
+      .text_color(on ? t.foreground : t.dim).hover((s) => s.bg(t.raised).text_color(t.foreground))
+      .tooltip(on ? "Notifications on: click to turn them off" : "Notify me when a pipeline here ends")
+      .on_click((_e, cx) => { cx.stop_propagation(); setShared(NOTIFY, on ? notified().filter((id) => id !== project.id) : [...notified(), project.id]); })
+      .child(svg(`${MOD}/${on ? "bell.svg" : "bell-off.svg"}`).size(13));
   }
 
   textButton(id, label, t, primary, onClick, enabled = true) {
