@@ -4,13 +4,16 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, Input, InputState } from "gpui-base";
 import { spaces, panes, exec, readTextFile, writeTextFile, appHome, theme, settings, window, notify, nextCommand, shared, setShared, openOverlay, closeOverlay, props } from "herdr";
 import { BUSY, PROVIDERS, parseRemote, buildRows } from "./providers.js";
+import { anchorOffset, popupAt } from "./placement.js";
 
 const MOD = "mods/pipelines";
-const DATA = "pipelines.data", SCOPE = "pipelines.scope", NOTIFY = "pipelines.notify", POPUP = "pipelines.popup", ANCHOR = "pipelines.anchor", OWNER = "pipelines.button";
+const DATA = "pipelines.data", SCOPE = "pipelines.scope", NOTIFY = "pipelines.notify", POPUP = "pipelines.popup", ANCHOR = "pipelines.anchor", OWNER = "pipelines.button", CLOSED = "pipelines.closed";
 const CONFIG = () => `${appHome()}/${MOD}/settings.json`;
 const IDLE_MS = 60000, BUSY_MS = 15000, ENV_MS = 300000, LEASE_MS = 60000;
 // The popup can't be resized once open, so one height fits every view and filter; the content scrolls.
 const POPUP_WIDTH = 380, POPUP_HEIGHT = 520, FADE = 12;
+// gpui's window (the drawable size), shadowed here by herdr's `window` import. Null if it can't be read: the popup then opens at the pointer.
+const viewport = () => { try { return globalThis.window.viewport_size(); } catch { return null; } };
 
 function ago(iso) {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -83,6 +86,7 @@ export default class Pipelines extends View {
   }
 
   async close() {
+    if (this.role === "popup") setShared(CLOSED, Date.now());
     if (this.role === "popup" && shared(POPUP) === props()?.overlay) setShared(POPUP, null);
     // A copy closed mid-refresh hands its lease back instead of blocking the others for a minute.
     if (this.busy) setShared(DATA, { ...data(), refreshing: null });
@@ -234,17 +238,19 @@ export default class Pipelines extends View {
     }
   }
 
-  // The button's window bounds, kept so a key can open the popup above it too.
+  // Kept so a key can open the popup above the button too.
   remember(b) {
-    if (!b) return;
-    const next = { x: Math.round(b.x), y: Math.round(b.y), width: Math.round(b.width), height: Math.round(b.height) };
+    const v = viewport();
+    if (!b || !v) return;
+    const next = anchorOffset(b, v);
     if (JSON.stringify(next) !== JSON.stringify(shared(ANCHOR))) setShared(ANCHOR, next);
+    return next;
   }
 
-  togglePopup(view = "list") {
+  togglePopup(view = "list", offset = shared(ANCHOR)) {
     const open = shared(POPUP);
     if (open) { closeOverlay(open); setShared(POPUP, null); return; }
-    const b = shared(ANCHOR), at = b ? { x: Math.max(8, b.x + b.width - POPUP_WIDTH - 6), y: Math.max(8, b.y - POPUP_HEIGHT - 6) } : undefined;
+    const v = viewport(), at = v ? popupAt(v, offset, { width: POPUP_WIDTH, height: POPUP_HEIGHT }) : undefined;
     setShared(POPUP, openOverlay({ mod: "pipelines", kind: "popup", width: POPUP_WIDTH, height: POPUP_HEIGHT, at, props: { popup: true, view } }));
   }
 
@@ -467,7 +473,12 @@ export default class Pipelines extends View {
     return h_flex().id("pipelines-button").size_full().px(12).gap(6).items_center().justify_end().bg(t.chrome).border_t(1).border_color(t.border)
       .text_size(11.8).text_color(color).cursor_pointer().hover((s) => s.text_color(failed ? t.ansi1 : t.foreground))
       .on_mouse_move((e) => this.remember(e.bounds))
-      .on_mouse_down("left", (e) => { this.remember(e.bounds); this.togglePopup(); })
+      .on_mouse_down("left", (e) => {
+        const offset = this.remember(e.bounds);
+        // The press already closed the popup as a click outside it: don't reopen it.
+        if (!shared(POPUP) && Date.now() - (shared(CLOSED) ?? 0) < 300) return;
+        this.togglePopup("list", offset);
+      })
       .child(!failed && busy
         ? svg(`${MOD}/spinner.svg`).size(12).text_color(t.ansi4).spin(900)
         : failed ? svg(`${MOD}/pipeline.svg`).size(13) : image(`${MOD}/pipe.svg`).size(13))

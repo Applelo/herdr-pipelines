@@ -45,7 +45,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
 ## How it behaves
 
 - Agent statuses (working, blocked, done, idle) aren't shown: the button and popup are about CI.
-- **The button**: a press opens the popup above it, or closes it if it's open. `cmd-shift-i` from the bundled `keys.json` does the same, above the button once the button has been hovered or pressed once (before that, at the pointer).
+- **The button**: a press opens the popup above it, or closes it if it's open. `cmd-shift-i` from the bundled `keys.json` does the same, above the button once the button has been hovered or pressed once (before that, in the window's bottom-right corner, above a 28px status bar).
 - **Closing**: the ✕, Esc, a click outside the popup, or the button or key again.
 - **Tokens**: the key button or "Add token" opens the Tokens view (a card per host with a repo in your spaces or a saved token, plus always `github.com` and `bitbucket.org`), with the keyboard in the first host without a token. Typing a token and pressing Save, or Enter in any field, writes every filled field into `settings.json` and goes back to the list, which refreshes within a few seconds (the mod reloads, then refreshes). Empty fields leave their saved token as it is. With an email, a Bitbucket token is saved as `{ "email", "token" }` (Basic auth), and without one as a plain access token (Bearer). "Remove" deletes that host's token. Cancel or the key button goes back without saving. `pipelines.tokens` opens the popup straight on this view.
 - **Space / All**: Space keeps only the repos of the shown space and follows the space as you switch. All shows every repo. The choice is shared and kept across restarts. It changes the popup only: the button always counts the shown space.
@@ -79,8 +79,9 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
   - `pipelines.notify`: the project ids (`<host>/<path>`) whose toasts are on, `[]` or missing by default;
   - `pipelines.popup`: the open popup's overlay id. The popup copy sets it in `init` and clears it in `close()` (also called on quit). The button only reads it to toggle;
   - `pipelines.button`: the newest button copy's id (see Watch out);
-  - `pipelines.anchor`: the button's window bounds (`{ x, y, width, height }`).
-- **Files**: `main.js` (roles, refresh, drawing) and `providers.js` (remote parsing, the GitLab, Bitbucket and GitHub APIs, the `bitbucket-pipelines.yml` reader, building the rows). Icons, 24×24 and `currentColor`, drawn with `svg()` so they take the text color:
+  - `pipelines.closed`: when a popup copy last closed (`Date.now()`), set in its `close()`;
+  - `pipelines.anchor`: the button's distance from the window's bottom-right corner (`{ right, bottom }`), so it stays right when the window is resized or moved to another screen.
+- **Files**: `main.js` (roles, refresh, drawing), `providers.js` (remote parsing, the GitLab, Bitbucket and GitHub APIs, the `bitbucket-pipelines.yml` reader, building the rows) and `placement.js` (where the popup opens, kept pure so it's tested). Icons, 24×24 and `currentColor`, drawn with `svg()` so they take the text color:
   - `spinner.svg`: a full circle at 0.24 stroke opacity plus a quarter arc, stroke 3.2;
   - `refresh.svg`: a circular arrow, stroke 2;
   - `close.svg`: an ✕, stroke 2;
@@ -119,7 +120,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
 - **Rendering and popups**
   - Read the role from `props()`, not from `init`'s first argument: that argument didn't carry the layout's props in this build.
   - A popup sizes to its content, so a `size_full()` root collapses to its header. Set `.w(380).h(520)` on the popup's root, the size given to `openOverlay`. An open overlay can't be resized, so a height fitted to the content goes wrong as soon as the Space / All switch or the view changes it: keep it fixed.
-  - The default pointer placement drops the popup off the bottom of the window. Open it with `at`, computed from the button's bounds: `on_click` events have no position, but `on_mouse_down` and `on_mouse_move` events carry `bounds`. Write the anchor to shared state only when it changes, since every `setShared` redraws every mod.
+  - The default pointer placement drops the popup off the bottom of the window. Open it with `at`, computed from the button's bounds: `on_click` events have no position, but `on_mouse_down` and `on_mouse_move` events carry `bounds`. A press places the popup from its own `bounds`; the key uses the saved anchor. Never save absolute bounds: the anchor persists, and once the window is bigger than when it was saved the popup lands toward the middle. Save the offset from the bottom-right corner (`globalThis.window.viewport_size()`, since herdr's `window` import shadows gpui's) and rebuild `at` from the live viewport, clamped 6px inside it (`placement.js`). If the viewport can't be read, open at the pointer rather than throw: the button's handlers call it on every press and hover. Write the anchor to shared state only when it changes, since every `setShared` redraws every mod.
 - **Tokens view**
   - `InputState.new` needs a live host call, so the fields are made when the view opens (a click, or `init` for a popup opened on it), never in `render`.
   - Never read a saved token back into an input or into shared state: `shared.json` is plain and kept on disk.
@@ -134,6 +135,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
   - Add the fades after the scroller so they draw over it.
 - **Data and refresh**
   - After a hot reload, and every saved token reloads the mod, the old copy's `nextCommand()` loop still answers the next command, so `open` runs twice and cancels itself. Each button copy writes a fresh id to `pipelines.button` in `init`, and a copy whose id is no longer there leaves its loop without acting.
+  - A press on the button while the popup is open first closes the popup as a click outside it, whose `close()` clears `pipelines.popup`, so the button would open it again. The button ignores a press that comes less than 300ms after `pipelines.closed` while no popup is open.
   - Don't reset `pipelines.popup` when the button starts: a popup open across a reload stays open, and the next press must close it. The popup owns that value.
   - Every copy runs the refresh timer, and the `refreshing` timestamp in the shared data is the lease. A lease older than 60s (a quit mid-refresh) is ignored.
   - `git remote get-url` runs once per space on every refresh, all spaces at once, and the spaces key also triggers one. Don't key it on anything that changes often (agent status, focus, a terminal's live cwd).
