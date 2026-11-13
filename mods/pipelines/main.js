@@ -145,7 +145,8 @@ export default class Pipelines extends View {
     const text = await readTextFile(CONFIG()).catch(() => null);
     let config = null, configError = null;
     try { config = text ? JSON.parse(text) : null; } catch (e) { configError = `${CONFIG()}: ${e.message}`; }
-    if (text !== null && !this.locked) { this.locked = true; await exec("chmod", ["600", CONFIG()]).catch(() => {}); }
+    // Only when needed: on Linux a chmod is a change in the mod's folder, which reloads the mod mid-refresh.
+    if (text !== null && !this.locked) { this.locked = true; await exec("sh", ["-c", '[ -n "$(find "$1" -perm 600)" ] || chmod 600 "$1"', "pipelines", CONFIG()]).catch(() => {}); }
     this.envTokens ??= await this.readEnvTokens();
     const projects = await this.findProjects();
     const missing = new Map(), envCache = { old: before.forced ? {} : before.envCache ?? {}, next: {} };
