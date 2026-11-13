@@ -125,7 +125,7 @@ A "Pipelines" button at the right end of the status bar, red with a count as soo
   - `InputState.new` needs a live host call, so the fields are made when the view opens (a click, or `init` for a popup opened on it), never in `render`.
   - Never read a saved token back into an input or into shared state: `shared.json` is plain and kept on disk.
   - Read, change and write `settings.json` with `writeTextFile(path, text, previousText)`, so an edit made meanwhile isn't overwritten. A file that isn't valid JSON is refused, not replaced.
-  - `writeTextFile` replaces the file atomically, which loses its mode: run `chmod 600` after every write, and once on load.
+  - `writeTextFile` replaces the file atomically, which loses its mode: run `chmod 600` after every write, and once on load only if the file isn't already 600: on Linux the folder watch sees a chmod as a change and reloads the mod, killing the refresh that ran it, so an unconditional chmod on load loops forever.
   - Writing the file reloads the mod, which ends the task that wrote it. Before writing, set `at: 0` and clear `refreshing` in the shared data, and don't start a refresh after the write: the reloaded copies refresh at once on their own. A refresh started there takes the lease and dies with the reload, so every refresh waits a minute and the new token seems not to work.
   - A copy closed mid-refresh (a popup closed with Esc) clears `refreshing` in `close()`, so the others don't wait out the lease.
   - A forced refresh sets `forced` in the shared data rather than in the copy: the copy holding the lease runs once more when it ends, and the next refresh ignores `envCache`.
